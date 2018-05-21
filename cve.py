@@ -27,38 +27,42 @@ def load_mitre_cve(url='https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.
 #
 # TODO - define object to load into and load into those objects
 def extract_mitre_json(json_data):
-    for cve in json_data["CVE_Items"]:
+    highlight_missing = True
+    total = 0
+    missing = 0
 
+    for cve in json_data["CVE_Items"]:
+        total += 1
+        cve_number = cve["cve"]["CVE_data_meta"]["ID"]
         if len(cve["cve"]["affects"]["vendor"]["vendor_data"])>0:
             #static index 0 -- more than 1 vendor?
             vendor_name =cve["cve"]["affects"]["vendor"]["vendor_data"][0]["vendor_name"]
-
-
             #static index 0 - more than 1 product per vendor?
             product = cve["cve"]["affects"]["vendor"]["vendor_data"][0]["product"]
-            product_name = product["product_data"][0]["product_name"]
+            product_name =  product["product_data"][0]["product_name"]
+            versions =  product["product_data"][0]["version"]["version_data"]
             description = cve["cve"]["description"]["description_data"][0]["value"]
             impact = cve["impact"]["baseMetricV3"]
             vector = impact["cvssV3"]["attackVector"]
             severity = impact["cvssV3"]["baseSeverity"]
-            product_name = product_name.lower()
-            target = target.lower()
-            description = description.lower()
-            #will need to do plenty of data massaging
-            #product names contain special characters and inconsitent formatting
-            #May also need to find 'description' and do searching there
-            #more of an art than science.
-            if target in product_name or target in description:
-                print(cve["cve"]["CVE_data_meta"]["ID"])
-                print("   " + vendor_name)
-                print("      - " + product_name)
-                print("Vector: "+vector)
-                print("Severity: "+severity)
-                print("Description: "+description)
-                print("")
-                print("")
-                print("")
 
+            product_name = product_name.lower()
+           # target = target.lower()
+            description = description.lower()
+
+            if highlight_missing is True and len(vendor_name) == 0 or len(product_name) == 0:
+                print("Incomplete: " + cve_number +" :"+vendor_name+":"+product_name)
+                missing += 1
+
+            for v in versions:
+                if highlight_missing is False:
+                    print(vendor_name+" ; "+product_name+" ; " + v["version_value"] + " ; "+cve_number)
+
+        else:
+            print("Incomplete: "+cve_number+":vendor data length :"+str(len(cve["cve"]["affects"]["vendor"]["vendor_data"])))
+            #print(cve["cve"]["affects"]["vendor"]["vendor_data"])
+            missing += 1
+    print ("Incomplete data: "+str(missing)+"/"+str(total))
 
 
 def test_dynamo_table():
@@ -70,10 +74,12 @@ def test_dynamo_table():
     print(vendor)
 
 
+extract_mitre_json(load_mitre_cve())
+
 test_dynamo_table()
 
 
-def search_for_vendor(vendor_name)
+def search_for_vendor(vendor_name):
     vendors = dynamodb.Table("vendor")
     response = vendors.query(
         KeyConditionExpression=Key('username').eq('johndoe')
