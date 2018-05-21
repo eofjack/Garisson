@@ -2,10 +2,89 @@ import requests, zipfile, io, json, boto3
 from boto3.dynamodb.conditions import Key, Attr
 
 
-host = "wpt23243"
-target = "cisco"
+class software:
+    vendor = ""
+    product = ""
+    version = ""
+    cve = []
+
+    def __str__(self):
+        return self.vendor+" - "+self.product+" - "+self.version
+
 #init global dynamo resource
 dynamodb = boto3.resource('dynamodb')
+
+sw_list = []
+
+# Param:
+#   software - a software obect
+#   vendor, produt, version - string
+#   scope - how strict to match. string: vendor|product|version.
+#       if version: vendor, product & version need to match
+#       if product: vendor & product need to match
+#       if vendor: vendor needs to match
+# Returns:
+#   match_type - string: exact|loose|none
+def match_sw(sw, vendor, product, version, vendor_match = True, product_match=True, version_match=True):
+    vendor = vendor.lower()
+    vm = False
+
+    product = product.lower()
+    pm = False
+
+    version = version.lower()
+    vem = False
+
+    loose = False
+
+
+    if vendor_match and (len(sw.vendor) > 0 and len(vendor) > 0):
+        if vendor == sw.vendor:
+            vm = True
+        if vendor in sw.vendor or sw.vendor in vendor:
+            vm = True
+            loose = True
+    if product_match and (len(sw.product) > 0 and len(product) > 0):
+        if product == sw.product:
+            pm = True
+        if product in sw.product or sw.product in product:
+            pm = True
+            loose = True
+    if version_match and (len(sw.version) > 0 and len(version) > 0):
+        if version == sw.version:
+            vem = True
+        if version in sw.version or sw.version in version:
+            vem = True
+            loose = True
+
+
+    success = False
+    if (vem and pm and vm) and (product_match and vendor_match and version_match):
+        success = True
+    elif ( pm and vm) and (product_match and vendor_match):
+        success = True
+    elif (vm) and (vendor_match):
+        success = True
+
+
+    if success:
+        if loose:
+            return "soft"
+        else:
+            return "exact"
+    else:
+        return "none"
+
+def load_customer_data(file_path="C:\\Users\\SSJ\\Downloads\\sw.csv"):
+    with open(file_path) as f:
+        for line in f:
+            cols = line.split(";")
+            sw = software()
+            sw.product = cols[0]
+            sw.version = cols[1]
+            sw.vendor = cols[2]
+            sw_list.append(sw)
+
 
 def load_mitre_cve(url='https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.zip'):
     print(" Downloading zip file.....")
@@ -27,7 +106,8 @@ def load_mitre_cve(url='https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.
 #
 # TODO - define object to load into and load into those objects
 def extract_mitre_json(json_data):
-    highlight_missing = True
+    highlight_missing = False
+    highlight_complete = False
     total = 0
     missing = 0
 
@@ -55,11 +135,15 @@ def extract_mitre_json(json_data):
                 missing += 1
 
             for v in versions:
-                if highlight_missing is False:
+                if highlight_complete is True:
                     print(vendor_name+" ; "+product_name+" ; " + v["version_value"] + " ; "+cve_number)
+                for sw in sw_list:
+                    if match_sw(sw, vendor=vendor_name, product=product_name.replace("_"," "), version=v["version_value"], version_match=False) != "none":
+                        print("MATCH!: "+cve_number+" @ "+str(sw))
 
         else:
-            print("Incomplete: "+cve_number+":vendor data length :"+str(len(cve["cve"]["affects"]["vendor"]["vendor_data"])))
+            if highlight_missing is False:
+                print("Incomplete: "+cve_number+":vendor data length :"+str(len(cve["cve"]["affects"]["vendor"]["vendor_data"])))
             #print(cve["cve"]["affects"]["vendor"]["vendor_data"])
             missing += 1
     print ("Incomplete data: "+str(missing)+"/"+str(total))
@@ -73,10 +157,10 @@ def test_dynamo_table():
     vendor = response['Item']
     print(vendor)
 
-
+load_customer_data()
 extract_mitre_json(load_mitre_cve())
 
-test_dynamo_table()
+#test_dynamo_table()
 
 
 def search_for_vendor(vendor_name):
