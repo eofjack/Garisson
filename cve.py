@@ -124,7 +124,7 @@ def match_sw(sw, vendor, product, version, vendor_match = True, product_match=Tr
         return "none"
 
 
-def load_customer_data(file_path="/home/sjackso3/Downloads/sw.csv"):
+def load_customer_data(file_path="sw.csv"):
     with open(file_path) as f:
         for line in f:
             cols = line.split(";")
